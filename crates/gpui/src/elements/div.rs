@@ -5862,4 +5862,56 @@ mod tests {
         assert_eq!(bounds("cell-1").origin.x, px(100.));
         assert_eq!(bounds("cell-2").origin.x, px(300.));
     }
+
+    struct A11yTestView {
+        presses: Rc<Cell<usize>>,
+    }
+
+    impl Render for A11yTestView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let presses = self.presses.clone();
+            div().size_full().child(
+                div()
+                    .id("a11y-button")
+                    .size(px(40.))
+                    .role(accesskit::Role::Button)
+                    .aria_label("Press me")
+                    .on_a11y_action(accesskit::Action::Click, move |_, _, _| {
+                        presses.set(presses.get() + 1);
+                    }),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn test_window_builds_a11y_tree_once_activated(cx: &mut TestAppContext) {
+        let presses = Rc::new(Cell::new(0));
+        let (_, cx) = cx.add_window_view({
+            let presses = presses.clone();
+            |_, _| A11yTestView { presses }
+        });
+        cx.run_until_parked();
+        assert!(
+            cx.update(|window, _| window.debug_a11y_tree_json())
+                .is_none(),
+            "no tree until an assistive technology connects"
+        );
+
+        cx.simulate_a11y_activation();
+        let json = cx
+            .update(|window, _| window.debug_a11y_tree_json())
+            .expect("tree built after activation");
+        let tree: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let button = tree["nodes"]
+            .as_object()
+            .unwrap()
+            .values()
+            .find(|node| node["aria"]["label"] == "Press me")
+            .expect("button in the tree");
+        assert_eq!(button["aria"]["role"], "Button");
+
+        let id = accesskit::NodeId(button["accesskit_id"].as_str().unwrap().parse().unwrap());
+        cx.simulate_a11y_action(id, accesskit::Action::Click);
+        assert_eq!(presses.get(), 1);
+    }
 }

@@ -1,10 +1,11 @@
 use crate::{
-    AnyWindowHandle, Bounds, Decorations, DevicePixels, DispatchEventResult, DisplayId, GpuSpecs,
-    HeadlessAtlas, KeyDownEvent, NativeViewId, Pixels, Platform, PlatformAtlas, PlatformDisplay,
-    PlatformHeadlessRenderer, PlatformInput, PlatformInputHandler, PlatformWindow, Point,
-    PromptButton, RequestFrameOptions, Scene, Size, TestDisplay, TestPlatform,
-    TextInputConfiguration, TextInputStateChange, WindowAppearance, WindowBackgroundAppearance,
-    WindowBounds, WindowControlArea, WindowInsets, WindowParams, WindowVisibility,
+    A11yCallbacks, AnyWindowHandle, Bounds, Decorations, DevicePixels, DispatchEventResult,
+    DisplayId, GpuSpecs, HeadlessAtlas, KeyDownEvent, NativeViewId, Pixels, Platform,
+    PlatformAtlas, PlatformDisplay, PlatformHeadlessRenderer, PlatformInput, PlatformInputHandler,
+    PlatformWindow, Point, PromptButton, RequestFrameOptions, Scene, Size, TestDisplay,
+    TestPlatform, TextInputConfiguration, TextInputStateChange, WindowAppearance,
+    WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowInsets, WindowParams,
+    WindowVisibility,
 };
 use gpui_util::ResultExt as _;
 #[cfg(any(test, feature = "test-support"))]
@@ -65,6 +66,7 @@ pub(crate) struct TestWindowState {
     decorations: Decorations,
     external_drag_files: Vec<(PathBuf, bool)>,
     start_external_drag_result: bool,
+    a11y: Option<A11yCallbacks>,
 }
 
 #[derive(Clone)]
@@ -147,7 +149,33 @@ impl TestWindow {
             decorations: Decorations::default(),
             external_drag_files: Vec::new(),
             start_external_drag_result: false,
+            a11y: None,
         })))
+    }
+
+    /// Simulates an assistive technology, such as a screen reader, connecting to this window.
+    /// From the next frame on, the window builds its accessibility tree.
+    pub fn simulate_a11y_activation(&self) {
+        let lock = self.0.lock();
+        if let Some(a11y) = lock.a11y.as_ref() {
+            (a11y.activation)();
+        }
+    }
+
+    /// Simulates the assistive technology disconnecting.
+    pub fn simulate_a11y_deactivation(&self) {
+        let lock = self.0.lock();
+        if let Some(a11y) = lock.a11y.as_ref() {
+            (a11y.deactivation)();
+        }
+    }
+
+    /// Simulates the assistive technology asking for an action, such as a click.
+    pub fn simulate_a11y_action(&self, request: accesskit::ActionRequest) {
+        let lock = self.0.lock();
+        if let Some(a11y) = lock.a11y.as_ref() {
+            (a11y.action)(request);
+        }
     }
     pub fn simulate_close(&self) {
         let callback = self.0.lock().close_callback.take();
@@ -461,6 +489,10 @@ impl PlatformWindow for TestWindow {
 
     fn set_text_input_configuration(&mut self, configuration: TextInputConfiguration) {
         self.0.lock().text_input_configurations.push(configuration);
+    }
+
+    fn a11y_init(&self, callbacks: A11yCallbacks) {
+        self.0.lock().a11y = Some(callbacks);
     }
 
     fn text_input_state_changed(&self, change: TextInputStateChange) {

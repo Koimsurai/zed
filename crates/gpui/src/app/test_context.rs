@@ -491,6 +491,22 @@ impl TestAppContext {
             .simulate_visibility_change(visibility);
     }
 
+    /// Simulates an assistive technology, such as a screen reader, connecting to the window.
+    /// From the next frame on, the window builds its accessibility tree.
+    pub fn simulate_window_a11y_activation(&self, window_handle: AnyWindowHandle) {
+        self.test_window(window_handle).simulate_a11y_activation();
+    }
+
+    /// Simulates the assistive technology asking the window for an action.
+    pub fn simulate_window_a11y_action(
+        &self,
+        window_handle: AnyWindowHandle,
+        request: accesskit::ActionRequest,
+    ) {
+        self.test_window(window_handle)
+            .simulate_a11y_action(request);
+    }
+
     /// Simulates the platform changing how the window is decorated.
     pub fn simulate_window_decorations_change(
         &self,
@@ -1026,6 +1042,28 @@ impl VisualTestContext {
     /// Simulates the user resizing the window to the new size.
     pub fn simulate_resize(&self, size: Size<Pixels>) {
         self.simulate_window_resize(self.window, size)
+    }
+
+    /// Simulates a screen reader connecting to this window, then runs until the window has drawn
+    /// its accessibility tree ([`Window::debug_a11y_tree_json`]).
+    pub fn simulate_a11y_activation(&mut self) {
+        self.simulate_window_a11y_activation(self.window);
+        self.run_until_parked();
+    }
+
+    /// Simulates a screen reader asking for `action` on the node `target`, then runs until
+    /// parked.
+    pub fn simulate_a11y_action(&mut self, target: accesskit::NodeId, action: accesskit::Action) {
+        self.simulate_window_a11y_action(
+            self.window,
+            accesskit::ActionRequest {
+                action,
+                target_tree: accesskit::TreeId::ROOT,
+                target_node: target,
+                data: None,
+            },
+        );
+        self.run_until_parked();
     }
 
     /// Simulates a change in whether the platform is presenting this window.
